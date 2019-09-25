@@ -1,30 +1,26 @@
 """Support for setting the Transmission BitTorrent client Turtle Mode."""
 import logging
 
-from homeassistant.components.transmission import (
-    DATA_TRANSMISSION, DATA_UPDATED)
-from homeassistant.const import (
-    STATE_OFF, STATE_ON)
+from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import ToggleEntity
 
-DEPENDENCIES = ['transmission']
+from . import DATA_TRANSMISSION, DATA_UPDATED
 
 _LOGGING = logging.getLogger(__name__)
 
-DEFAULT_NAME = 'Transmission Turtle Mode'
+DEFAULT_NAME = "Transmission Turtle Mode"
 
 
-async def async_setup_platform(
-        hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Set up the Transmission switch."""
     if discovery_info is None:
         return
 
     component_name = DATA_TRANSMISSION
     transmission_api = hass.data[component_name]
-    name = discovery_info['client_name']
+    name = discovery_info["client_name"]
 
     async_add_entities([TransmissionSwitch(transmission_api, name)], True)
 

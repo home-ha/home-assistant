@@ -1,29 +1,33 @@
 """Support for IKEA Tradfri lights."""
 import logging
 
-from homeassistant.core import callback
-from homeassistant.components.light import (
-    ATTR_BRIGHTNESS, ATTR_COLOR_TEMP, ATTR_HS_COLOR, ATTR_TRANSITION,
-    SUPPORT_BRIGHTNESS, SUPPORT_TRANSITION, SUPPORT_COLOR_TEMP,
-    SUPPORT_COLOR, Light)
-from homeassistant.components.light import \
-    PLATFORM_SCHEMA as LIGHT_PLATFORM_SCHEMA
-from homeassistant.components.tradfri import (
-    KEY_GATEWAY, KEY_API, DOMAIN as TRADFRI_DOMAIN)
-from homeassistant.components.tradfri.const import (
-    CONF_IMPORT_GROUPS, CONF_GATEWAY_ID)
+from pytradfri.error import PytradfriError
+
 import homeassistant.util.color as color_util
+from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP,
+    ATTR_HS_COLOR,
+    ATTR_TRANSITION,
+    PLATFORM_SCHEMA as LIGHT_PLATFORM_SCHEMA,
+    SUPPORT_BRIGHTNESS,
+    SUPPORT_COLOR,
+    SUPPORT_COLOR_TEMP,
+    SUPPORT_TRANSITION,
+    Light,
+)
+from homeassistant.core import callback
+from . import DOMAIN as TRADFRI_DOMAIN, KEY_API, KEY_GATEWAY
+from .const import CONF_GATEWAY_ID, CONF_IMPORT_GROUPS
 
 _LOGGER = logging.getLogger(__name__)
 
-ATTR_DIMMER = 'dimmer'
-ATTR_HUE = 'hue'
-ATTR_SAT = 'saturation'
-ATTR_TRANSITION_TIME = 'transition_time'
-DEPENDENCIES = ['tradfri']
+ATTR_DIMMER = "dimmer"
+ATTR_HUE = "hue"
+ATTR_SAT = "saturation"
+ATTR_TRANSITION_TIME = "transition_time"
 PLATFORM_SCHEMA = LIGHT_PLATFORM_SCHEMA
-IKEA = 'IKEA of Sweden'
-TRADFRI_LIGHT_MANAGER = 'Tradfri Light Manager'
+TRADFRI_LIGHT_MANAGER = "Tradfri Light Manager"
 SUPPORTED_FEATURES = SUPPORT_TRANSITION
 SUPPORTED_GROUP_FEATURES = SUPPORT_BRIGHTNESS | SUPPORT_TRANSITION
 
@@ -38,15 +42,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     devices = await api(devices_commands)
     lights = [dev for dev in devices if dev.has_light_control]
     if lights:
-        async_add_entities(
-            TradfriLight(light, api, gateway_id) for light in lights)
+        async_add_entities(TradfriLight(light, api, gateway_id) for light in lights)
 
     if config_entry.data[CONF_IMPORT_GROUPS]:
         groups_commands = await api(gateway.get_groups())
         groups = await api(groups_commands)
         if groups:
-            async_add_entities(
-                TradfriGroup(group, api, gateway_id) for group in groups)
+            async_add_entities(TradfriGroup(group, api, gateway_id) for group in groups)
 
 
 class TradfriGroup(Light):
@@ -55,7 +57,7 @@ class TradfriGroup(Light):
     def __init__(self, group, api, gateway_id):
         """Initialize a Group."""
         self._api = api
-        self._unique_id = "group-{}-{}".format(gateway_id, group.id)
+        self._unique_id = f"group-{gateway_id}-{group.id}"
         self._group = group
         self._name = group.name
 
@@ -98,30 +100,28 @@ class TradfriGroup(Light):
         """Instruct the group lights to turn on, or dim."""
         keys = {}
         if ATTR_TRANSITION in kwargs:
-            keys['transition_time'] = int(kwargs[ATTR_TRANSITION]) * 10
+            keys["transition_time"] = int(kwargs[ATTR_TRANSITION]) * 10
 
         if ATTR_BRIGHTNESS in kwargs:
             if kwargs[ATTR_BRIGHTNESS] == 255:
                 kwargs[ATTR_BRIGHTNESS] = 254
 
-            await self._api(
-                self._group.set_dimmer(kwargs[ATTR_BRIGHTNESS], **keys))
+            await self._api(self._group.set_dimmer(kwargs[ATTR_BRIGHTNESS], **keys))
         else:
             await self._api(self._group.set_state(1))
 
     @callback
     def _async_start_observe(self, exc=None):
         """Start observation of light."""
-        # pylint: disable=import-error
-        from pytradfri.error import PytradfriError
         if exc:
-            _LOGGER.warning("Observation failed for %s", self._name,
-                            exc_info=exc)
+            _LOGGER.warning("Observation failed for %s", self._name, exc_info=exc)
 
         try:
-            cmd = self._group.observe(callback=self._observe_update,
-                                      err_callback=self._async_start_observe,
-                                      duration=0)
+            cmd = self._group.observe(
+                callback=self._observe_update,
+                err_callback=self._async_start_observe,
+                duration=0,
+            )
             self.hass.async_create_task(self._api(cmd))
         except PytradfriError as err:
             _LOGGER.warning("Observation failed, trying again", exc_info=err)
@@ -149,7 +149,7 @@ class TradfriLight(Light):
     def __init__(self, light, api, gateway_id):
         """Initialize a Light."""
         self._api = api
-        self._unique_id = "light-{}-{}".format(gateway_id, light.id)
+        self._unique_id = f"light-{gateway_id}-{light.id}"
         self._light = None
         self._light_control = None
         self._light_data = None
@@ -172,14 +172,12 @@ class TradfriLight(Light):
         info = self._light.device_info
 
         return {
-            'identifiers': {
-                (TRADFRI_DOMAIN, self._light.id)
-            },
-            'name': self._name,
-            'manufacturer': info.manufacturer,
-            'model': info.model_number,
-            'sw_version': info.firmware_version,
-            'via_hub': (TRADFRI_DOMAIN, self._gateway_id),
+            "identifiers": {(TRADFRI_DOMAIN, self._light.id)},
+            "name": self._name,
+            "manufacturer": info.manufacturer,
+            "model": info.model_number,
+            "sw_version": info.firmware_version,
+            "via_device": (TRADFRI_DOMAIN, self._gateway_id),
         }
 
     @property
@@ -249,8 +247,7 @@ class TradfriLight(Light):
         if ATTR_TRANSITION in kwargs:
             transition_time = int(kwargs[ATTR_TRANSITION]) * 10
 
-            dimmer_data = {ATTR_DIMMER: 0, ATTR_TRANSITION_TIME:
-                           transition_time}
+            dimmer_data = {ATTR_DIMMER: 0, ATTR_TRANSITION_TIME: transition_time}
             await self._api(self._light_control.set_dimmer(**dimmer_data))
         else:
             await self._api(self._light_control.set_state(False))
@@ -266,10 +263,10 @@ class TradfriLight(Light):
             brightness = kwargs[ATTR_BRIGHTNESS]
             if brightness > 254:
                 brightness = 254
-            elif brightness < 0:
-                brightness = 0
-            dimmer_data = {ATTR_DIMMER: brightness, ATTR_TRANSITION_TIME:
-                           transition_time}
+            dimmer_data = {
+                ATTR_DIMMER: brightness,
+                ATTR_TRANSITION_TIME: transition_time,
+            }
             dimmer_command = self._light_control.set_dimmer(**dimmer_data)
             transition_time = None
         else:
@@ -277,18 +274,22 @@ class TradfriLight(Light):
 
         color_command = None
         if ATTR_HS_COLOR in kwargs and self._light_control.can_set_color:
-            hue = int(kwargs[ATTR_HS_COLOR][0] *
-                      (self._light_control.max_hue / 360))
-            sat = int(kwargs[ATTR_HS_COLOR][1] *
-                      (self._light_control.max_saturation / 100))
-            color_data = {ATTR_HUE: hue, ATTR_SAT: sat, ATTR_TRANSITION_TIME:
-                          transition_time}
+            hue = int(kwargs[ATTR_HS_COLOR][0] * (self._light_control.max_hue / 360))
+            sat = int(
+                kwargs[ATTR_HS_COLOR][1] * (self._light_control.max_saturation / 100)
+            )
+            color_data = {
+                ATTR_HUE: hue,
+                ATTR_SAT: sat,
+                ATTR_TRANSITION_TIME: transition_time,
+            }
             color_command = self._light_control.set_hsb(**color_data)
             transition_time = None
 
         temp_command = None
-        if ATTR_COLOR_TEMP in kwargs and (self._light_control.can_set_temp or
-                                          self._light_control.can_set_color):
+        if ATTR_COLOR_TEMP in kwargs and (
+            self._light_control.can_set_temp or self._light_control.can_set_color
+        ):
             temp = kwargs[ATTR_COLOR_TEMP]
             # White Spectrum bulb
             if self._light_control.can_set_temp:
@@ -296,8 +297,10 @@ class TradfriLight(Light):
                     temp = self.max_mireds
                 elif temp < self.min_mireds:
                     temp = self.min_mireds
-                temp_data = {ATTR_COLOR_TEMP: temp, ATTR_TRANSITION_TIME:
-                             transition_time}
+                temp_data = {
+                    ATTR_COLOR_TEMP: temp,
+                    ATTR_TRANSITION_TIME: transition_time,
+                }
                 temp_command = self._light_control.set_color_temp(**temp_data)
                 transition_time = None
             # Color bulb (CWS)
@@ -306,10 +309,12 @@ class TradfriLight(Light):
                 temp_k = color_util.color_temperature_mired_to_kelvin(temp)
                 hs_color = color_util.color_temperature_to_hs(temp_k)
                 hue = int(hs_color[0] * (self._light_control.max_hue / 360))
-                sat = int(hs_color[1] *
-                          (self._light_control.max_saturation / 100))
-                color_data = {ATTR_HUE: hue, ATTR_SAT: sat,
-                              ATTR_TRANSITION_TIME: transition_time}
+                sat = int(hs_color[1] * (self._light_control.max_saturation / 100))
+                color_data = {
+                    ATTR_HUE: hue,
+                    ATTR_SAT: sat,
+                    ATTR_TRANSITION_TIME: transition_time,
+                }
                 color_command = self._light_control.set_hsb(**color_data)
                 transition_time = None
 
@@ -331,18 +336,18 @@ class TradfriLight(Light):
     @callback
     def _async_start_observe(self, exc=None):
         """Start observation of light."""
-        # pylint: disable=import-error
-        from pytradfri.error import PytradfriError
+
         if exc:
             self._available = False
             self.async_schedule_update_ha_state()
-            _LOGGER.warning("Observation failed for %s", self._name,
-                            exc_info=exc)
+            _LOGGER.warning("Observation failed for %s", self._name, exc_info=exc)
 
         try:
-            cmd = self._light.observe(callback=self._observe_update,
-                                      err_callback=self._async_start_observe,
-                                      duration=0)
+            cmd = self._light.observe(
+                callback=self._observe_update,
+                err_callback=self._async_start_observe,
+                duration=0,
+            )
             self.hass.async_create_task(self._api(cmd))
         except PytradfriError as err:
             _LOGGER.warning("Observation failed, trying again", exc_info=err)
